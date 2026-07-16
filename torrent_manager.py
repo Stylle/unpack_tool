@@ -42,6 +42,62 @@ BASE_DIR = _get_base_dir()
 LINKS_DIR = os.path.join(BASE_DIR, "links")
 TORRENTS_DIR = os.path.join(BASE_DIR, "torrents")
 
+DB_PATH = os.path.join(BASE_DIR, "app_data.db")
+
+
+def init_db():
+    import sqlite3
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""CREATE TABLE IF NOT EXISTS config (
+        key TEXT PRIMARY KEY, value TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS torrent_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT, filepath TEXT, status TEXT DEFAULT '未下载'
+    )""")
+    conn.commit()
+    conn.close()
+
+
+def get_cfg(key, default=""):
+    import sqlite3
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT value FROM config WHERE key=?", (key,))
+        row = c.fetchone()
+        conn.close()
+        return row[0] if row else default
+    except:
+        return default
+
+
+def set_cfg(key, value):
+    import sqlite3
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, value))
+        conn.commit()
+        conn.close()
+    except:
+        pass
+
+
+def clear_db():
+    import sqlite3
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("DELETE FROM config")
+        c.execute("DELETE FROM torrent_items")
+        conn.commit()
+        conn.close()
+    except:
+        pass
+
+
 MIN_DELAY = 5.0
 MAX_DELAY = 60.0
 TIMEOUT = 30
@@ -264,15 +320,18 @@ class TorrentManagerApp:
         self.push_paused = threading.Event()
         self.download_stopped = False
         self.push_stopped = False
+        self.min_delay = MIN_DELAY
+        self.max_delay = MAX_DELAY
 
         os.makedirs(LINKS_DIR, exist_ok=True)
         os.makedirs(TORRENTS_DIR, exist_ok=True)
 
         self.setup_ui()
         self.scan_link_files()
+        init_db()
+        self._load_saved_state()
         self.log("程序启动，请配置下载器参数并选择链接文件")
 
-    # ── UI ──
     def setup_ui(self):
         main = ttk.Frame(self.root, padding=12)
         main.pack(fill=tk.BOTH, expand=True)
@@ -342,6 +401,18 @@ class TorrentManagerApp:
         self.btn_replace = ttk.Button(r3, text="替换生成", command=self.on_replace, width=12)
         self.btn_replace.pack(side=tk.LEFT)
 
+
+        # 随机延时配置
+        r4 = ttk.Frame(f2); r4.pack(fill=tk.X, pady=(4, 0))
+        ttk.Label(r4, text="延时间隔：").pack(side=tk.LEFT)
+        self.e_min_delay = ttk.Entry(r4, width=5)
+        self.e_min_delay.insert(0, str(MIN_DELAY))
+        self.e_min_delay.pack(side=tk.LEFT, padx=(4, 4))
+        ttk.Label(r4, text="~").pack(side=tk.LEFT)
+        self.e_max_delay = ttk.Entry(r4, width=5)
+        self.e_max_delay.insert(0, str(MAX_DELAY))
+        self.e_max_delay.pack(side=tk.LEFT, padx=(4, 8))
+        ttk.Label(r4, text="秒").pack(side=tk.LEFT)
         # 种子列表
         f3 = ttk.LabelFrame(main, text="种子列表", padding=4)
         f3.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
@@ -376,6 +447,8 @@ class TorrentManagerApp:
         self.btn_pause_push.pack(side=tk.LEFT, padx=(0, 12))
         self.cb_del = tk.BooleanVar(value=True)
         ttk.Checkbutton(fb, text="推送后删除本地文件", variable=self.cb_del).pack(side=tk.LEFT, padx=(12, 0))
+        ttk.Button(fb, text="\u4fdd\u5b58\u914d\u7f6e", command=self._save_all, width=10).pack(side=tk.RIGHT, padx=(0, 4))
+        ttk.Button(fb, text="\u91cd\u7f6e\u914d\u7f6e", command=self.on_reset, width=10).pack(side=tk.RIGHT, padx=(0, 0))
         self.prog = ttk.Progressbar(fb, mode="indeterminate", length=180)
         self.prog.pack(side=tk.LEFT, padx=(0, 12))
         self.lbl_stat = ttk.Label(fb, text="就绪")
@@ -392,6 +465,157 @@ class TorrentManagerApp:
         sv.pack(side=tk.RIGHT, fill=tk.Y)
 
         self._sync_buttons()
+
+
+    def _load_saved_state(self):
+        """\u52a0\u8f7d\u4fdd\u5b58\u7684\u914d\u7f6e\u548c\u79cd\u5b50\u5217\u8868"""
+        host = get_cfg("host", "127.0.0.1")
+        port = get_cfg("port", "8080")
+        user = get_cfg("username", "")
+        pwd = get_cfg("password", "")
+        dl_type = get_cfg("downloader_type", "qBittorrent")
+        website = get_cfg("website", "")
+        passkey = get_cfg("passkey", "")
+        seed_path = get_cfg("seed_path", "")
+        link_file = get_cfg("link_file", "")
+
+        if link_file and os.path.exists(link_file):
+            # \u6062\u590d\u4e0b\u62c9\u6846\u9009\u4e2d\u9879
+            fname = os.path.basename(link_file)
+            vals = self.cmb_file["values"]
+            if fname in vals:
+                idx = list(vals).index(fname)
+                self.cmb_file.current(idx)
+                self.current_link_file = link_file
+
+        if dl_type == "qBittorrent v5 (API\u5bc6\u94a5)":
+            self.cmb_dl.set("qBittorrent v5 (API\u5bc6\u94a5)")
+            self._dl_type_changed()
+        elif dl_type == "Transmission":
+            self.cmb_dl.set("Transmission")
+            self._dl_type_changed()
+        else:
+            self.cmb_dl.set("qBittorrent")
+            self._dl_type_changed()
+
+        self.entry_host.delete(0, tk.END)
+        self.entry_host.insert(0, host)
+        self.entry_port.delete(0, tk.END)
+        self.entry_port.insert(0, port)
+        self.entry_user.delete(0, tk.END)
+        self.entry_user.insert(0, user)
+        self.entry_pass.delete(0, tk.END)
+        self.entry_pass.insert(0, pwd)
+        self.e_web.delete(0, tk.END)
+        self.e_web.insert(0, website)
+        self.e_pk.delete(0, tk.END)
+        self.e_pk.insert(0, passkey)
+        self.e_seed.delete(0, tk.END)
+        self.e_seed.insert(0, seed_path)
+
+        # \u52a0\u8f7d\u5ef6\u65f6\u914d\u7f6e
+        try:
+            self.min_delay = float(get_cfg("min_delay", str(MIN_DELAY)))
+        except:
+            self.min_delay = MIN_DELAY
+        try:
+            self.max_delay = float(get_cfg("max_delay", str(MAX_DELAY)))
+        except:
+            self.max_delay = MAX_DELAY
+        self.e_min_delay.delete(0, tk.END); self.e_min_delay.insert(0, str(self.min_delay))
+        self.e_max_delay.delete(0, tk.END); self.e_max_delay.insert(0, str(self.max_delay))
+
+        self._save_config()
+
+        import sqlite3
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("PRAGMA table_info(torrent_items)")
+            cols = [row[1] for row in c.fetchall()]
+            if "sub_path" not in cols:
+                c.execute("ALTER TABLE torrent_items ADD COLUMN sub_path TEXT DEFAULT ''")
+            c.execute("SELECT url, filepath, status, sub_path FROM torrent_items ORDER BY id")
+            rows = c.fetchall()
+            conn.close()
+            for url, filepath, status, sub_path in rows:
+                self.torrent_items.append({"url": url, "filepath": filepath, "status": status})
+            if rows:
+                self._refresh_tree()
+                self.log(f"\u5df2\u52a0\u8f7d {len(rows)} \u4e2a\u79cd\u5b50\u8bb0\u5f55")
+        except Exception:
+            pass
+        self._sync_buttons()
+
+    def _save_config(self):
+        """\u4fdd\u5b58\u5f53\u524d\u914d\u7f6e\u5230\u6570\u636e\u5e93"""
+        set_cfg("downloader_type", self.cmb_dl.get())
+        set_cfg("host", self.entry_host.get().strip())
+        set_cfg("port", self.entry_port.get().strip())
+        set_cfg("username", self.entry_user.get().strip())
+        set_cfg("password", self.entry_pass.get().strip())
+        set_cfg("website", self.e_web.get().strip())
+        set_cfg("passkey", self.e_pk.get().strip())
+        set_cfg("seed_path", self.e_seed.get().strip())
+        if self.current_link_file:
+            set_cfg("link_file", self.current_link_file)
+
+    def _save_torrent_items(self):
+        """\u4fdd\u5b58\u79cd\u5b50\u5217\u8868\u5230\u6570\u636e\u5e93"""
+        import sqlite3
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("DELETE FROM torrent_items")
+            for item in self.torrent_items:
+                c.execute("INSERT INTO torrent_items (url, filepath, status, sub_path) VALUES (?, ?, ?, ?)",
+                          (item["url"], item["filepath"], item["status"], item.get("sub_path", "")))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    def _save_all(self):
+        """\u624b\u52a8\u4fdd\u5b58\u6240\u6709\u914d\u7f6e\u5230\u6570\u636e\u5e93"""
+        self._save_config()
+        self._save_torrent_items()
+        self.log("\u914d\u7f6e\u5df2\u4fdd\u5b58")
+        messagebox.showinfo("\u4fdd\u5b58\u6210\u529f", "\u6240\u6709\u914d\u7f6e\u5df2\u4fdd\u5b58\u5230\u6570\u636e\u5e93")
+
+    def on_reset(self):
+        """\u91cd\u7f6e\u6240\u6709\u914d\u7f6e\u3001\u6e05\u7a7a\u79cd\u5b50\u5217\u8868\u548c\u79cd\u5b50\u6587\u4ef6"""
+        if not messagebox.askyesno("\u786e\u8ba4\u91cd\u7f6e", "\u786e\u5b9a\u8981\u91cd\u7f6e\u6240\u6709\u914d\u7f6e\u3001\u6e05\u7a7a\u79cd\u5b50\u5217\u8868\u5e76\u5220\u9664\u79cd\u5b50\u6587\u4ef6\u5417\uff1f"):
+            return
+
+        if os.path.exists(TORRENTS_DIR):
+            for fname in os.listdir(TORRENTS_DIR):
+                if fname.endswith(".torrent"):
+                    try:
+                        os.remove(os.path.join(TORRENTS_DIR, fname))
+                    except Exception:
+                        pass
+
+        clear_db()
+
+        self.torrent_items = []
+        self.downloader_client = None
+        self.current_link_file = ""
+        self._refresh_tree()
+
+        self.entry_host.delete(0, tk.END); self.entry_host.insert(0, "127.0.0.1")
+        self.entry_port.delete(0, tk.END); self.entry_port.insert(0, "8080")
+        self.entry_user.delete(0, tk.END)
+        self.entry_pass.delete(0, tk.END)
+        self.e_web.delete(0, tk.END); self.e_web.insert(0, "https://example.com")
+        self.e_pk.delete(0, tk.END)
+        self.e_seed.delete(0, tk.END)
+        self.cmb_dl.set("qBittorrent")
+        self._dl_type_changed()
+
+        self._sync_buttons()
+        self.log("\u5df2\u91cd\u7f6e\u6240\u6709\u914d\u7f6e\u548c\u79cd\u5b50\u6570\u636e")
+        messagebox.showinfo("\u91cd\u7f6e\u5b8c\u6210", "\u5df2\u6e05\u7a7a\u6240\u6709\u914d\u7f6e\u3001\u79cd\u5b50\u5217\u8868\u548c\u79cd\u5b50\u6587\u4ef6")
+
 
     def _dl_type_changed(self):
         tp = self.cmb_dl.get()
@@ -422,7 +646,7 @@ class TorrentManagerApp:
 
     def _file_selected(self):
         idx = self.cmb_file.current()
-        if idx >= 0 and hasattr(self.cmb_file, "_files"):
+        if idx >= 0 and hasattr(self.cmb_file, "_files") and self.cmb_file._files:
             fl = self.cmb_file._files
             if idx < len(fl):
                 self.current_link_file = fl[idx]
@@ -437,7 +661,8 @@ class TorrentManagerApp:
 
         self.btn_dl.configure(state=tk.NORMAL if (has_list and not dl_running) else tk.DISABLED)
         self.btn_push.configure(state=tk.NORMAL if (has_torrent_files and not push_running and self.downloader_client) else tk.DISABLED)
-        self.btn_replace.configure(state=tk.NORMAL if not self.downloading else tk.DISABLED)
+        can_replace = not self.downloading or self.download_paused.is_set()
+        # self.btn_replace.configure(state=tk.NORMAL if can_replace else tk.DISABLED)
         self.btn_pause_dl.configure(state=tk.NORMAL if dl_running else tk.DISABLED)
         self.btn_pause_push.configure(state=tk.NORMAL if push_running else tk.DISABLED)
 
@@ -533,6 +758,7 @@ class TorrentManagerApp:
         if ok:
             self.lbl_conn.configure(text="✅ 已连接", foreground="green")
             self.downloader_client = client
+            self._save_config()
             self.log(f"✅ {msg}")
         else:
             self.lbl_conn.configure(text="❌ 失败", foreground="red")
@@ -551,6 +777,14 @@ class TorrentManagerApp:
             messagebox.showwarning("提示", "请输入 Passkey"); return
         if not seed:
             messagebox.showwarning("提示", "请选择做种路径"); return
+        if self.downloading:
+            self.download_stopped = True
+            self.download_paused.clear()
+            self.downloading = False
+            self.prog.stop()
+            self.lbl_stat.configure(text="已停止（重新替换）")
+            self.root.update_idletasks()
+
         if not self.current_link_file or not os.path.exists(self.current_link_file):
             messagebox.showwarning("提示", "请先选择链接文件"); return
 
@@ -566,17 +800,25 @@ class TorrentManagerApp:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            url = line.replace("{website}", web).replace("{passkey}", pk)
+            sub_path = ""
+            url_text = line
+            if "|" in line:
+                parts = line.split("|", 1)
+                sub_path = parts[0].strip()
+                url_text = parts[1].strip()
+            url = url_text.replace("{website}", web).replace("{passkey}", pk)
             if url in seen:
                 continue
             seen.add(url)
-            items.append({"url": url, "filepath": "", "status": "待下载"})
+            items.append({"url": url, "filepath": "", "status": "待下载", "sub_path": sub_path})
 
         if not items:
             messagebox.showwarning("提示", "文件中无有效链接"); return
 
         self.torrent_items = items
+        self.log(f"\u751f\u6210 {len(items)} \u4e2a\u79cd\u5b50\u94fe\u63a5")
         self._refresh_tree()
+        self._save_torrent_items()
         self.log(f"替换完成，共 {len(items)} 个种子")
         self._sync_buttons()
 
@@ -584,8 +826,13 @@ class TorrentManagerApp:
         for item in self.tree.get_children():
             self.tree.delete(item)
         for i, item in enumerate(self.torrent_items, 1):
-            disp = item["url"] if len(item["url"]) <= 60 else item["url"][:57] + "..."
-            self.tree.insert("", tk.END, values=(str(i), disp, item["status"]),
+            url_disp = item["url"]
+            sub = item.get("sub_path", "")
+            if sub:
+                url_disp = f"[{sub}] " + (url_disp if len(url_disp) <= 55 else url_disp[:52] + "...")
+            elif len(url_disp) > 60:
+                url_disp = url_disp[:57] + "..."
+            self.tree.insert("", tk.END, values=(str(i), url_disp, item["status"]),
                              tags=(item["status"],))
         self.tree.tag_configure("待下载", foreground="#666666")
         self.tree.tag_configure("已下载", foreground="#2e7d32")
@@ -657,7 +904,7 @@ class TorrentManagerApp:
                 # 非最后一项则延时
                 remaining = [it for it in self.torrent_items if it["status"] == "待下载"]
                 if remaining and not self.download_paused.is_set():
-                    d = random.uniform(MIN_DELAY, MAX_DELAY)
+                    d = random.uniform(self.min_delay, self.max_delay)
                     self.root.after(0, lambda d=d: self.log(f"等待 {d:.1f}s..."))
                     for _ in range(int(d / 0.5)):
                         if self.download_stopped or self.download_paused.is_set():
@@ -676,6 +923,7 @@ class TorrentManagerApp:
         self.prog.stop()
         self.lbl_stat.configure(text="下载完成")
         self.log(f"🎉 下载完成: 成功 {ok}, 失败 {fail}")
+        self._save_torrent_items()
         self._refresh_tree()
         self._sync_buttons()
         # 重置暂停状态
@@ -737,7 +985,19 @@ class TorrentManagerApp:
                 self.root.after(0, lambda fn=os.path.basename(filepath): self.log(f"推送: {fn}"))
 
                 try:
-                    ok, msg = self.downloader_client.add_torrent_file(filepath, seed)
+                    base_name = os.path.basename(filepath).replace(".torrent", "")
+                    sub = ""
+                    for item in self.torrent_items:
+                        fn = os.path.basename(item.get("filepath", "")).replace(".torrent", "")
+                        if fn == base_name:
+                            sub = item.get("sub_path", "")
+                            break
+                    save_path = base_seed
+                    if sub:
+                        save_path = os.path.join(base_seed, sub)
+                        os.makedirs(save_path, exist_ok=True)
+
+                    ok, msg = self.downloader_client.add_torrent_file(filepath, save_path)
                     if ok:
                         ok_n += 1
                         pushed_names.append(os.path.basename(filepath))
