@@ -208,9 +208,6 @@ class TorrentManagerApp:
         actions.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         self.test_button = ttk.Button(actions, text="测试连接", style="Accent.TButton", command=self._test_connection)
         self.test_button.pack(side=tk.LEFT)
-        self.push_test_button = ttk.Button(actions, text="推送自检", command=self._test_push)
-        self.push_test_button.pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Label(actions, text="自检会加入暂停的测试种子并立即移除，不会下载内容", style="Muted.TLabel").pack(side=tk.LEFT, padx=(14, 0))
 
         log_panel = ttk.LabelFrame(parent, text="运行日志", style="Panel.TLabelframe", padding=8)
         log_panel.pack(fill=tk.BOTH, expand=True)
@@ -389,29 +386,6 @@ class TorrentManagerApp:
             self._log(message, error=True)
             messagebox.showerror("连接失败", message)
         self._sync_buttons()
-
-    def _test_push(self) -> None:
-        if not self.client:
-            messagebox.showwarning("未连接", "请先测试连接下载器")
-            return
-        save_path = self.seed_path_var.get().strip()
-        if not save_path:
-            messagebox.showwarning("缺少路径", "请填写下载器可访问的做种路径")
-            return
-        self.push_test_button.configure(state=tk.DISABLED)
-        self._set_status("正在执行推送自检...", ACCENT)
-
-        def work():
-            result = self.service.test_push(self.client, save_path)
-            self.root.after(0, lambda: self._push_test_done(*result))
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _push_test_done(self, ok: bool, message: str) -> None:
-        self.push_test_button.configure(state=tk.NORMAL)
-        self._set_status("推送自检通过" if ok else "推送自检失败", SUCCESS if ok else ERROR)
-        self._log(message, error=not ok)
-        (messagebox.showinfo if ok else messagebox.showerror)("推送自检", message)
 
     def _start_download(self) -> None:
         if self.running_task:

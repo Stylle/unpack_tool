@@ -10,14 +10,13 @@
 - 每处理一个种子就保存状态；程序重启后可继续下载或直接推送。
 - 随机下载间隔会验证并持久化。
 - 默认保留本地种子文件。
-- “推送自检”可在没有真实种子时验证连接、添加权限和目标路径。
 
 ## 使用
 
 1. 将链接模板 `.txt` 放入程序旁的 `links` 文件夹。
 2. 在“任务”页填写 Website、Passkey 和下载器能够访问的做种路径。
 3. 生成任务并下载种子。
-4. 在“下载器与设置”页配置 qBittorrent 或 Transmission，测试连接或执行推送自检。
+4. 在“下载器与设置”页配置 qBittorrent 或 Transmission，测试连接。
 5. 回到“任务”页开始推送。
 
 做种路径是下载器所在设备看到的路径。例如下载器运行在 NAS 上时，应填写 NAS 路径，而不是当前电脑的路径。
@@ -38,10 +37,6 @@
 
 仍兼容旧模板中的 `https://website` 和 `yourpasskey`。
 
-## 推送自检
-
-自检会创建一个 1 字节测试种子，以暂停状态推送到下载器，读取下载器实际采用的保存路径进行比较，然后立即移除种子且不删除任何数据。它不会开始下载测试内容。
-
 ## 开发
 
 ```powershell
@@ -53,5 +48,5 @@ python torrent_manager.py
 构建发布包：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1 -Version 1.1.0
+powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1 -Version 1.1.1
 ```
