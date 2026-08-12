@@ -32,7 +32,6 @@ class TorrentManagerApp:
         self.client = None
         self.running_task = ""
         self.download_pause_event = threading.Event()
-        self.push_pause_event = threading.Event()
         self.stop_event = threading.Event()
         self.link_files: list[Path] = []
 
@@ -70,7 +69,7 @@ class TorrentManagerApp:
         self.min_delay_var = tk.StringVar(value="5")
         self.max_delay_var = tk.StringVar(value="60")
         self.delete_after_push_var = tk.BooleanVar(value=False)
-        self.push_paused_var = tk.BooleanVar(value=False)
+        self.add_paused_var = tk.BooleanVar(value=False)
         self.connection_var = tk.StringVar(value="未连接")
         self.summary_var = tk.StringVar()
         self.status_var = tk.StringVar(value="就绪")
@@ -183,7 +182,7 @@ class TorrentManagerApp:
         self.pause_button.pack(side=tk.LEFT, padx=(18, 0))
         ttk.Button(controls, text="选中项重新推送", command=self._reset_selected).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Checkbutton(controls, text="推送后删除本地种子", variable=self.delete_after_push_var, command=self._save_config).pack(side=tk.RIGHT)
-        ttk.Checkbutton(controls, text="暂停推送", variable=self.push_paused_var, command=self._toggle_push_pause).pack(side=tk.RIGHT, padx=(0, 16))
+        ttk.Checkbutton(controls, text="添加后暂停", variable=self.add_paused_var, command=self._save_config).pack(side=tk.RIGHT, padx=(0, 16))
 
         preview = ttk.Label(parent, textvariable=self.path_preview_var, style="Subtle.TLabel")
         preview.pack(fill=tk.X, pady=(8, 0))
@@ -252,9 +251,9 @@ class TorrentManagerApp:
         self.min_delay_var.set(get("min_delay", "5"))
         self.max_delay_var.set(get("max_delay", "60"))
         self.delete_after_push_var.set(get("delete_after_push", "0") == "1")
-        self.push_paused_var.set(get("push_paused", "0") == "1")
-        if self.push_paused_var.get():
-            self.push_pause_event.set()
+        self.add_paused_var.set(
+            get("add_paused", get("push_paused", "0")) == "1"
+        )
         self.link_file_var.set(Path(get("link_file", "")).name)
 
     def _save_config(self, notify: bool = False) -> bool:
@@ -276,7 +275,7 @@ class TorrentManagerApp:
                 "min_delay": str(minimum),
                 "max_delay": str(maximum),
                 "delete_after_push": "1" if self.delete_after_push_var.get() else "0",
-                "push_paused": "1" if self.push_paused_var.get() else "0",
+                "add_paused": "1" if self.add_paused_var.get() else "0",
                 "link_file": str(self._selected_link_path() or ""),
             }
         )
@@ -433,12 +432,13 @@ class TorrentManagerApp:
             return
         self._save_config()
         delete_after_push = self.delete_after_push_var.get()
+        add_paused = self.add_paused_var.get()
         self._begin_task("push", f"正在推送 {len(candidates)} 个种子")
 
         def work():
             result = self.service.push_downloaded(
-                self.items, self.client, save_path, delete_after_push,
-                self.push_pause_event, self.stop_event, self._thread_log, self._thread_refresh,
+                self.items, self.client, save_path, delete_after_push, add_paused,
+                self.stop_event, self._thread_log, self._thread_refresh,
             )
             self.root.after(0, lambda: self._task_done("推送", *result))
 
@@ -449,19 +449,12 @@ class TorrentManagerApp:
         self.stop_event.clear()
         if name == "download":
             self.download_pause_event.clear()
-        elif self.push_paused_var.get():
-            self.push_pause_event.set()
-        else:
-            self.push_pause_event.clear()
         self.progress.start(12)
         self.pause_button.configure(
             text="暂停下载",
             state=tk.NORMAL if name == "download" else tk.DISABLED,
         )
-        if name == "push" and self.push_pause_event.is_set():
-            self._set_status("推送已暂停", MUTED)
-        else:
-            self._set_status(status, ACCENT)
+        self._set_status(status, ACCENT)
         self._sync_buttons()
 
     def _toggle_download_pause(self) -> None:
@@ -475,19 +468,6 @@ class TorrentManagerApp:
             self.download_pause_event.set()
             self.pause_button.configure(text="继续下载")
             self._set_status("下载已暂停", MUTED)
-
-    def _toggle_push_pause(self) -> None:
-        if self.push_paused_var.get():
-            self.push_pause_event.set()
-            if self.running_task == "push":
-                self._set_status("推送已暂停", MUTED)
-                self._log("推送已暂停，将在当前请求完成后停止发送下一条")
-        else:
-            self.push_pause_event.clear()
-            if self.running_task == "push":
-                self._set_status("推送继续", ACCENT)
-                self._log("推送任务继续")
-        self._save_config()
 
     def _task_done(self, label: str, success: int, failure: int) -> None:
         self.running_task = ""

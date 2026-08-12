@@ -16,7 +16,13 @@ if ($DeclaredVersion.Trim() -ne $Version) {
     throw "Version mismatch: package=$DeclaredVersion, requested=$Version"
 }
 python -m pytest -q tests --basetemp .test-tmp -p no:cacheprovider
+if ($LASTEXITCODE -ne 0) {
+    throw "Tests failed with exit code $LASTEXITCODE"
+}
 python -m PyInstaller --noconfirm --clean --onefile --windowed --name unpack_tool torrent_manager.py
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller failed with exit code $LASTEXITCODE"
+}
 
 if (Test-Path -LiteralPath $StageDir) {
     Remove-Item -LiteralPath $StageDir -Recurse -Force

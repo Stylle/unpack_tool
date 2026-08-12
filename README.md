@@ -10,6 +10,7 @@
 - 每处理一个种子就保存状态；程序重启后可继续下载或直接推送。
 - 随机下载间隔会验证并持久化。
 - 默认保留本地种子文件。
+- 可选择让推送到 qBittorrent 或 Transmission 的种子保持暂停状态。
 
 ## 使用
 
@@ -48,5 +49,5 @@ python torrent_manager.py
 构建发布包：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1 -Version 1.1.1
+powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1 -Version 1.1.2
 ```

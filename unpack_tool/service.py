@@ -89,7 +89,7 @@ class TorrentService:
         client,
         base_save_path: str,
         delete_after_push: bool,
-        pause_event: threading.Event,
+        add_paused: bool,
         stop_event: threading.Event,
         log: LogCallback,
         progress: ProgressCallback,
@@ -105,10 +105,10 @@ class TorrentService:
         for item in candidates:
             if stop_event.is_set():
                 break
-            while pause_event.is_set() and not stop_event.wait(0.25):
-                pass
             save_path = join_download_path(base_save_path, item.sub_path)
-            ok, message = client.add_torrent_file(item.filepath, save_path)
+            ok, message = client.add_torrent_file(
+                item.filepath, save_path, paused=add_paused
+            )
             if ok:
                 item.status = STATUS_PUSHED
                 item.error = ""

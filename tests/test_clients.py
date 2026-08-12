@@ -45,10 +45,12 @@ def test_qb_uses_same_cookie_login_for_v4_and_v5_api(tmp_path):
     ok, message = client.test_connection()
     assert ok is True
     assert "5.1.4" in message
-    ok, _ = client.add_torrent_file(str(torrent), r"D:\Media")
+    ok, _ = client.add_torrent_file(str(torrent), r"D:\Media", paused=True)
     assert ok is True
     add_call = next(call for call in session.calls if call[1].endswith("/torrents/add"))
     assert add_call[2]["data"]["savepath"] == r"D:\Media"
+    assert add_call[2]["data"]["paused"] == "true"
+    assert add_call[2]["data"]["stopped"] == "true"
     assert not any("api_key" in str(call) or "X-API-Key" in str(call) for call in session.calls)
 
 
@@ -75,9 +77,9 @@ def test_transmission_retries_409_and_pushes_download_dir(tmp_path):
     client = TransmissionClient("127.0.0.1", "9091", session=session)
 
     assert client.test_connection()[0] is True
-    ok, identifier = client.add_torrent_file(str(torrent), "/media/movies")
+    ok, identifier = client.add_torrent_file(str(torrent), "/media/movies", paused=True)
     assert ok is True
     assert identifier == "7"
     add_call = next(call for call in session.calls if call[1]["method"] == "torrent-add")
     assert add_call[1]["arguments"]["download-dir"] == "/media/movies"
-
+    assert add_call[1]["arguments"]["paused"] is True
