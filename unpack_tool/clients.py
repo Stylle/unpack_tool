@@ -1,5 +1,4 @@
 import base64
-import hashlib
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -126,31 +125,6 @@ class QBittorrentClient:
         except (OSError, DownloaderError) as exc:
             return False, str(exc)
 
-    def remove_torrent(self, torrent_hash: str) -> tuple[bool, str]:
-        try:
-            response = self._request(
-                "POST",
-                "/api/v2/torrents/delete",
-                data={"hashes": torrent_hash, "deleteFiles": "false"},
-            )
-            if response.status_code == 200:
-                return True, "测试种子已清理"
-            return False, f"清理失败 HTTP {response.status_code}"
-        except DownloaderError as exc:
-            return False, str(exc)
-
-    def torrent_location(self, torrent_hash: str) -> tuple[bool, str]:
-        try:
-            response = self._request(
-                "GET", "/api/v2/torrents/properties", params={"hash": torrent_hash}
-            )
-            if response.status_code != 200:
-                return False, f"读取测试种子路径失败 HTTP {response.status_code}"
-            return True, str(response.json().get("save_path", ""))
-        except (ValueError, DownloaderError) as exc:
-            return False, str(exc)
-
-
 class TransmissionClient:
     def __init__(
         self,
@@ -234,42 +208,3 @@ class TransmissionClient:
             return True, str(torrent_id)
         except (OSError, DownloaderError) as exc:
             return False, str(exc)
-
-    def remove_torrent(self, torrent_id: str) -> tuple[bool, str]:
-        try:
-            self._rpc(
-                "torrent-remove",
-                {"ids": [int(torrent_id)], "delete-local-data": False},
-            )
-            return True, "测试种子已清理"
-        except (ValueError, DownloaderError) as exc:
-            return False, str(exc)
-
-    def torrent_location(self, torrent_id: str) -> tuple[bool, str]:
-        try:
-            details = self._rpc(
-                "torrent-get", {"ids": [int(torrent_id)], "fields": ["downloadDir"]}
-            )
-            torrents = details.get("torrents", [])
-            if not torrents:
-                return False, "Transmission 中未找到测试种子"
-            return True, str(torrents[0].get("downloadDir", ""))
-        except (ValueError, DownloaderError) as exc:
-            return False, str(exc)
-
-
-def write_test_torrent(path: str | Path) -> str:
-    name = b"unpack_tool_push_test.txt"
-    piece_hash = hashlib.sha1(b"x").digest()
-    info = (
-        b"d6:lengthi1e4:name"
-        + str(len(name)).encode("ascii")
-        + b":"
-        + name
-        + b"12:piece lengthi16384e6:pieces20:"
-        + piece_hash
-        + b"e"
-    )
-    torrent = b"d8:announce27:http://127.0.0.1:9/announce4:info" + info + b"e"
-    Path(path).write_bytes(torrent)
-    return hashlib.sha1(info).hexdigest()

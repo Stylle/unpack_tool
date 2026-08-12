@@ -8,7 +8,6 @@ from typing import Callable
 
 import requests
 
-from .clients import QBittorrentClient, TransmissionClient, write_test_torrent
 from .links import join_download_path
 from .models import STATUS_DOWNLOADED, STATUS_FAILED, STATUS_PENDING, STATUS_PUSHED, TorrentItem
 from .storage import StateStore
@@ -129,28 +128,3 @@ class TorrentService:
             self.store.save_item(item)
             progress()
         return success, failure
-
-    def test_push(self, client, save_path: str) -> tuple[bool, str]:
-        test_path = self.torrent_dir / ".unpack_tool_push_test.torrent"
-        info_hash = write_test_torrent(test_path)
-        try:
-            ok, identifier = client.add_torrent_file(str(test_path), save_path, paused=True)
-            if not ok:
-                return False, identifier
-            remove_id = info_hash if isinstance(client, QBittorrentClient) else identifier
-            location_ok, actual_path = client.torrent_location(remove_id)
-            clean_ok, clean_message = client.remove_torrent(remove_id)
-            if not clean_ok:
-                return True, f"推送成功，但自动清理失败: {clean_message}"
-            if not location_ok:
-                return False, f"推送成功，但无法验证路径: {actual_path}"
-            expected = save_path.replace("\\", "/").rstrip("/").casefold()
-            actual = actual_path.replace("\\", "/").rstrip("/").casefold()
-            if expected != actual:
-                return False, f"路径不一致：期望 {save_path}，下载器实际使用 {actual_path}"
-            return True, f"推送路径有效: {actual_path}；测试种子已自动清理"
-        finally:
-            try:
-                test_path.unlink()
-            except FileNotFoundError:
-                pass
