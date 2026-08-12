@@ -31,6 +31,7 @@ New-Item -ItemType Directory -Path $StageDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'dist\unpack_tool.exe') -Destination $StageDir
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'links') -Destination $StageDir -Recurse
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'README.md') -Destination $StageDir
+Copy-Item -LiteralPath (Join-Path $ProjectRoot 'USER_GUIDE.md') -Destination $StageDir
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'CHANGELOG.md') -Destination $StageDir
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'LICENSE') -Destination $StageDir
 
