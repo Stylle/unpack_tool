@@ -1,5 +1,4 @@
 import threading
-import time
 
 from unpack_tool.models import STATUS_DOWNLOADED, STATUS_PUSHED, TorrentItem
 from unpack_tool.service import TorrentService
@@ -27,7 +26,7 @@ def test_push_uses_sub_path_and_keeps_torrent_by_default(tmp_path):
     client = RecordingClient()
 
     result = service.push_downloaded(
-        [item], client, "/media", False, threading.Event(), threading.Event(),
+        [item], client, "/media", False, False, threading.Event(),
         lambda *_: None, lambda: None,
     )
     assert result == (1, 0)
@@ -36,7 +35,7 @@ def test_push_uses_sub_path_and_keeps_torrent_by_default(tmp_path):
     assert item.status == STATUS_PUSHED
 
 
-def test_push_waits_while_pause_switch_is_enabled(tmp_path):
+def test_push_adds_torrent_in_paused_state_when_enabled(tmp_path):
     torrent_dir = tmp_path / "torrents"
     torrent_dir.mkdir()
     torrent = torrent_dir / "sample.torrent"
@@ -46,23 +45,10 @@ def test_push_waits_while_pause_switch_is_enabled(tmp_path):
     store.replace_items([item])
     service = TorrentService(store, torrent_dir)
     client = RecordingClient()
-    pause_event = threading.Event()
-    pause_event.set()
-    result = []
-
-    worker = threading.Thread(
-        target=lambda: result.append(
-            service.push_downloaded(
-                [item], client, "/media", False, pause_event, threading.Event(),
-                lambda *_: None, lambda: None,
-            )
-        )
+    result = service.push_downloaded(
+        [item], client, "/media", False, True, threading.Event(),
+        lambda *_: None, lambda: None,
     )
-    worker.start()
-    time.sleep(0.35)
-    assert client.calls == []
-
-    pause_event.clear()
-    worker.join(timeout=2)
-    assert result == [(1, 0)]
+    assert result == (1, 0)
     assert len(client.calls) == 1
+    assert client.calls[0][2] is True
