@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.test-tmp/
+.coverage
+app_data.db
+torrents/
+build/
+dist/
+*.spec
