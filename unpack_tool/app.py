@@ -47,14 +47,26 @@ class TorrentManagerApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _configure_window(self) -> None:
+        self.ui_scale = self._detect_ui_scale()
+        window_scale = min(self.ui_scale, 1.15)
         self.root.title("Unpack Tool - 种子下载与推送")
-        self.root.geometry("1180x800")
-        self.root.minsize(980, 680)
+        self.root.geometry(f"{round(1180 * window_scale)}x{round(800 * window_scale)}")
+        self.root.minsize(round(980 * window_scale), round(680 * window_scale))
         self.root.configure(bg=APP_BG)
         try:
             self.root.tk.call("tk", "scaling", 1.15)
         except tk.TclError:
             pass
+
+    def _detect_ui_scale(self) -> float:
+        try:
+            dpi = float(self.root.winfo_fpixels("1i"))
+        except (tk.TclError, ValueError):
+            dpi = 96.0
+        return max(1.0, min(dpi / 96.0, 1.35))
+
+    def _font(self, size: int, weight: str = "normal", family: str = "Microsoft YaHei UI"):
+        return (family, max(9, round(size * self.ui_scale)), weight)
 
     def _create_variables(self) -> None:
         self.downloader_var = tk.StringVar(value="qBittorrent")
@@ -70,6 +82,7 @@ class TorrentManagerApp:
         self.max_delay_var = tk.StringVar(value="60")
         self.delete_after_push_var = tk.BooleanVar(value=False)
         self.add_paused_var = tk.BooleanVar(value=False)
+        self.auto_push_var = tk.BooleanVar(value=True)
         self.connection_var = tk.StringVar(value="未连接")
         self.summary_var = tk.StringVar()
         self.status_var = tk.StringVar(value="就绪")
@@ -79,18 +92,24 @@ class TorrentManagerApp:
         style = ttk.Style(self.root)
         if "vista" in style.theme_names():
             style.theme_use("vista")
+        body_font = self._font(9)
+        bold_font = self._font(9, "bold")
         style.configure("App.TFrame", background=APP_BG)
         style.configure("Panel.TFrame", background=PANEL_BG)
         style.configure("Panel.TLabelframe", background=PANEL_BG, borderwidth=1)
-        style.configure("Panel.TLabelframe.Label", background=PANEL_BG, foreground=TEXT)
-        style.configure("Title.TLabel", background=APP_BG, foreground=TEXT, font=("Microsoft YaHei UI", 18, "bold"))
-        style.configure("Subtle.TLabel", background=APP_BG, foreground=MUTED)
-        style.configure("Panel.TLabel", background=PANEL_BG, foreground=TEXT)
-        style.configure("Muted.TLabel", background=PANEL_BG, foreground=MUTED)
-        style.configure("Accent.TButton", padding=(14, 7), font=("Microsoft YaHei UI", 9, "bold"))
-        style.configure("TButton", padding=(10, 6))
-        style.configure("Treeview", rowheight=28, font=("Microsoft YaHei UI", 9))
-        style.configure("Treeview.Heading", font=("Microsoft YaHei UI", 9, "bold"))
+        style.configure("Panel.TLabelframe.Label", background=PANEL_BG, foreground=TEXT, font=body_font)
+        style.configure("Title.TLabel", background=APP_BG, foreground=TEXT, font=self._font(18, "bold"))
+        style.configure("Subtle.TLabel", background=APP_BG, foreground=MUTED, font=body_font)
+        style.configure("Panel.TLabel", background=PANEL_BG, foreground=TEXT, font=body_font)
+        style.configure("Muted.TLabel", background=PANEL_BG, foreground=MUTED, font=body_font)
+        style.configure("Accent.TButton", padding=(14, 7), font=bold_font)
+        style.configure("TButton", padding=(10, 6), font=body_font)
+        style.configure("TEntry", font=body_font)
+        style.configure("TCombobox", font=body_font)
+        style.configure("TCheckbutton", font=body_font)
+        style.configure("TNotebook.Tab", font=body_font)
+        style.configure("Treeview", rowheight=round(28 * self.ui_scale), font=body_font)
+        style.configure("Treeview.Heading", font=bold_font)
 
     def _build_ui(self) -> None:
         shell = ttk.Frame(self.root, style="App.TFrame", padding=(18, 14))
@@ -183,6 +202,7 @@ class TorrentManagerApp:
         ttk.Button(controls, text="选中项重新推送", command=self._reset_selected).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Checkbutton(controls, text="推送后删除本地种子", variable=self.delete_after_push_var, command=self._save_config).pack(side=tk.RIGHT)
         ttk.Checkbutton(controls, text="添加后暂停", variable=self.add_paused_var, command=self._save_config).pack(side=tk.RIGHT, padx=(0, 16))
+        ttk.Checkbutton(controls, text="下载完成后自动推送", variable=self.auto_push_var, command=self._save_config).pack(side=tk.RIGHT, padx=(0, 16))
 
         preview = ttk.Label(parent, textvariable=self.path_preview_var, style="Subtle.TLabel")
         preview.pack(fill=tk.X, pady=(8, 0))
@@ -222,7 +242,7 @@ class TorrentManagerApp:
             bg="#161b22",
             fg="#d8dee9",
             insertbackground="#ffffff",
-            font=("Consolas", 10),
+            font=self._font(10, family="Consolas"),
             padx=10,
             pady=8,
         )
@@ -254,6 +274,7 @@ class TorrentManagerApp:
         self.add_paused_var.set(
             get("add_paused", get("push_paused", "0")) == "1"
         )
+        self.auto_push_var.set(get("auto_push", "1") == "1")
         self.link_file_var.set(Path(get("link_file", "")).name)
 
     def _save_config(self, notify: bool = False) -> bool:
@@ -276,6 +297,7 @@ class TorrentManagerApp:
                 "max_delay": str(maximum),
                 "delete_after_push": "1" if self.delete_after_push_var.get() else "0",
                 "add_paused": "1" if self.add_paused_var.get() else "0",
+                "auto_push": "1" if self.auto_push_var.get() else "0",
                 "link_file": str(self._selected_link_path() or ""),
             }
         )
@@ -470,6 +492,7 @@ class TorrentManagerApp:
             self._set_status("下载已暂停", MUTED)
 
     def _task_done(self, label: str, success: int, failure: int) -> None:
+        auto_push = label == "下载" and success > 0 and self.auto_push_var.get()
         self.running_task = ""
         self.download_pause_event.clear()
         self.progress.stop()
@@ -479,6 +502,9 @@ class TorrentManagerApp:
         color = SUCCESS if failure == 0 else ERROR
         self._set_status(f"{label}完成：成功 {success}，失败 {failure}", color)
         self._log(f"{label}完成：成功 {success}，失败 {failure}", error=failure > 0)
+        if auto_push:
+            self._log("下载完成，自动开始推送已下载种子")
+            self.root.after(0, self._start_push)
 
     def _reset_selected(self) -> None:
         indexes = [int(item_id) for item_id in self.tree.selection()]
